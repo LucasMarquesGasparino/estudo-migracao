@@ -81,19 +81,25 @@
 
   /* ---------- descritivo nacional ---------- */
   function national(v) {
-    var w2 = new Array(5).fill(0), w3 = new Array(10).fill(0), i, c, E2 = 0, E3 = 0;
+    var w1 = new Array(6).fill(0), w2 = new Array(5).fill(0), w3 = new Array(10).fill(0), i, c, E1 = 0, E2 = 0, E3 = 0;
     for (i = 0; i < v.n; i++) {
+      for (c = 0; c < 6; c++) w1[c] += v.w1[i * 6 + c];
       for (c = 0; c < 5; c++) w2[c] += v.w2[i * 5 + c];
       for (c = 0; c < 10; c++) w3[c] += v.w3[i * 10 + c];
     }
-    E2 = sum(w2); E3 = sum(w3);
+    E1 = sum(w1); E2 = sum(w2); E3 = sum(w3);
+    var cat1 = { L: w1[0], B: w1[1], OUT: w1[2], NV: w1[3] + w1[4] + w1[5] };
     var cat2 = { L: w2[0], B: w2[1], OUT: 0, NV: w2[2] + w2[3] + w2[4] };
     var cat3 = { L: w3[0], F: w3[1], OUT: w3[2] + w3[3] + w3[4] + w3[5] + w3[6], NV: w3[7] + w3[8] + w3[9] };
     return {
-      n: v.n, E2: E2, E3: E3, w2: w2, w3: w3,
-      pp: { L2: cat2.L / E2, B2: cat2.B / E2, NV2: cat2.NV / E2, L3: cat3.L / E3, F3: cat3.F / E3, OUT3: cat3.OUT / E3, NV3: cat3.NV / E3 },
+      n: v.n, E1: E1, E2: E2, E3: E3, w1: w1, w2: w2, w3: w3,
+      pp: { L1: cat1.L / E1, B1: cat1.B / E1, OUT1: cat1.OUT / E1, NV1: cat1.NV / E1,
+        L2: cat2.L / E2, B2: cat2.B / E2, NV2: cat2.NV / E2, L3: cat3.L / E3, F3: cat3.F / E3, OUT3: cat3.OUT / E3, NV3: cat3.NV / E3 },
       delta: { L: cat3.L / E3 - cat2.L / E2, F: cat3.F / E3 - cat2.B / E2, OUT: cat3.OUT / E3, NV: cat3.NV / E3 - cat2.NV / E2 },
-      votes: { L2: cat2.L, B2: cat2.B, L3: cat3.L, F3: cat3.F, OUT3: cat3.OUT }
+      votes: { L1: cat1.L, B1: cat1.B, OUT1: cat1.OUT, Bl1: w1[3], N1: w1[4], A1: w1[5],
+        L2: cat2.L, B2: cat2.B, Bl2: w2[2], N2: w2[3], A2: w2[4],
+        L3: cat3.L, F3: cat3.F, CY3: w3[2], SA3: w3[3], CA3: w3[4], ZE3: w3[5], D3: w3[6],
+        OUT3: cat3.OUT, Bl3: w3[7], N3: w3[8], A3: w3[9] }
     };
   }
 
@@ -358,7 +364,8 @@
     for (i = 0; i < ds.n; i++) { if (ds.tier[i] === 0) keep.push(i); if (ds.tier[i] <= 1) keepAB.push(i); }
     var v = select(ds, cfg.sampleTiers === 'AB' ? keepAB : keep);
     if (keepAB.length > keep.length && cfg.sampleTiers !== 'AB') cfg.altTierView = select(ds, keepAB);
-    var res = { meta: { cfg: merge(cfg, { altTierView: undefined }), sample: { n: v.n, municipalities: v.K, zones: v.Z, nTotalMatched: ds.n } } };
+    var metaCfg = merge(cfg); delete metaCfg.altTierView;
+    var res = { meta: { cfg: metaCfg, sample: { n: v.n, municipalities: v.K, zones: v.Z, nTotalMatched: ds.n } } };
     res.national = national(v);
     res.transition = transition(v, cfg);
     res.byUf = byUf(v, res.transition.stats, cfg);
@@ -402,7 +409,7 @@
 if (typeof require !== 'undefined' && require.main === module) {
   const fs = require('fs'), path = require('path'), readline = require('readline');
   const R = module.exports, args = process.argv.slice(2);
-  if (args.length < 2) { console.error('uso: node scripts/est-run.js data/secoes.tsv out/resultados.json [--fast] [--surveys data/pesquisas.json] [--sample AB]'); process.exit(2); }
+  if (args.length < 2) { console.error('uso: node scripts/est-run.js data/secoes.tsv out/resultados.json [--fast] [--surveys data/pesquisas.json] [--qa out/qa.json] [--sample AB]'); process.exit(2); }
   const opt = (n) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : undefined; };
   const cfg = args.includes('--fast') ? { nBoot: 100, nBootSens: 40, nBootUf: 40, nPerm: 30 } : {};
   if (opt('surveys')) cfg.surveys = JSON.parse(fs.readFileSync(opt('surveys'), 'utf8'));
@@ -414,6 +421,25 @@ if (typeof require !== 'undefined' && require.main === module) {
       const t0 = Date.now(), ds = R.parseTsvLines(lines);
       console.log('seções lidas:', ds.n, '| municípios:', ds.nMun, '| zonas:', ds.nZone);
       const res = R.analyze(ds, cfg);
+      if (opt('qa')) {
+        const qa = JSON.parse(fs.readFileSync(opt('qa'), 'utf8'));
+        res.meta.sourceTotals = qa.totais_nacionais;
+        res.meta.sourceQuality = {
+          tier_A: qa.tier_A, tier_B: qa.tier_B,
+          eleitorado_2026_total: qa.eleitorado_2026_total,
+          eleitorado_2026_base_votos: qa.eleitorado_2026_base_votos,
+          eleitorado_2026_total_detalhe: qa.eleitorado_2026_total_detalhe,
+          eleitorado_2026_nao_apurado: qa.eleitorado_2026_nao_apurado,
+          eleitorado_2026_tier_A: qa.eleitorado_2026_tier_A,
+          cobertura_eleitorado_tier_A: qa.cobertura_eleitorado_tier_A
+        };
+        res.meta.sourceDetailTotals = qa.totais_detalhe_completo;
+        res.meta.sourceJson2026 = {
+          url: qa.fonte_json_tse_2026,
+          totals: qa.totais_json_tse_2026,
+          divergences: qa.divergencias_json_tse_2026
+        };
+      }
       fs.mkdirSync(path.dirname(args[1]), { recursive: true });
       fs.writeFileSync(args[1], JSON.stringify(res));
       console.log('veredictos:', JSON.stringify({ q1: res.verdicts.q1, q1Final: res.verdicts.q1Final, q2Gradient: res.verdicts.q2Gradient, q2Rho: res.verdicts.q2Rho }));

@@ -35,12 +35,27 @@ ALIAS = {
     'votavel': ['NR_VOTAVEL', 'NR_CANDIDATO'], 'votos': ['QT_VOTOS', 'QT_VOTOS_NOMINAIS'], 'aptos': ['QT_APTOS'], 'comp': ['QT_COMPARECIMENTO'],
     'local': ['NR_LOCAL_VOTACAO'], 'localnome': ['NM_LOCAL_VOTACAO'],
 }
-# totais nacionais oficiais (tolerância 0,05%); N usa o totalizador TSE `vn`, coerente com a fórmula por seção.
+# Totais nacionais esperados. A categoria N inclui votos nulos técnicos (NR_VOTAVEL=28 em 2026),
+# como no `tvn` do totalizador. O código 28 não é voto válido em outro candidato.
 ESPERADO = {
     ('2026', 'L'): 53879538, ('2026', 'F'): 56104503, ('2026', 'CURY'): 3448569, ('2026', 'SANTOS'): 2675887, ('2026', 'CAIADO'): 2605148,
-    ('2026', 'ZEMA'): 326488, ('2026', 'Bl'): 2300798, ('2026', 'N'): 3669003,
-    ('2022-1', 'L'): 57259504, ('2022-1', 'B'): 51071106, ('2022-2', 'L'): 60345999, ('2022-2', 'B'): 58206354,
+    ('2026', 'ZEMA'): 326488, ('2026', 'D'): 260655, ('2026', 'Bl'): 2300798, ('2026', 'N'): 3674249, ('2026', 'validos'): 119300788,
+    # Totais capturados na mesma base de seções que compõe o JSON do APK.
+    ('2026', 'aptos'): 158745007, ('2026', 'comparecimento'): 125275835, ('2026', 'abstencao'): 33469172, ('2026', 'nulos_tecnicos'): 5246,
+    ('2022-1', 'L'): 57259504, ('2022-1', 'B'): 51072345, ('2022-2', 'L'): 60345999, ('2022-2', 'B'): 58206354,
 }
+JSON_TSE_2026 = {
+    'total_eleitorado': 158745502, 'eleitorado_apurado': 158745079, 'eleitorado_nao_apurado': 423,
+    'comparecimento': 125275835, 'abstencao_apurada': 33469244, 'validos': 119300788,
+    'brancos': 2300798, 'nulos': 3674249, 'nulos_validos': 3669003, 'nulos_tecnicos': 5246,
+    'secoes_total': 499248, 'secoes_apuradas': 499207, 'secoes_nao_apuradas': 41,
+}
+JSON_TSE_2026_CHECKS = {
+    ('detalhe', 'aptos'): 'total_eleitorado', ('capturado', 'comparecimento'): 'comparecimento',
+    ('capturado', 'validos'): 'validos', ('capturado', 'brancos'): 'brancos',
+    ('capturado', 'nulos'): 'nulos', ('capturado', 'nulos_tecnicos'): 'nulos_tecnicos',
+}
+URL_JSON_TSE_2026 = 'https://resultados.tse.jus.br/oficial/ele2026/6257/dados/br/br-c0001-e006257-u.json'
 
 
 def abrir_todos(caminho, membro=None):
@@ -79,7 +94,7 @@ def norm(s):
 
 def ler_votos(caminho, membro, turnos, colunas):
     """colunas: função número->índice (0..k-1), k, índice branco. Devolve acc[(turno,chave)] = [k+1 somas..., branco], locais."""
-    acc, locais = {}, {}
+    acc, locais, nulos_tecnicos = {}, {}, {}
     for nome, rd in abrir_todos(caminho, membro):
         H = rd.fieldnames
         cT, cC, cU, cM, cZ, cS, cV, cQ = (col(H, 'turno'), col(H, 'cargo'), col(H, 'uf'), col(H, 'mun'), col(H, 'zona'), col(H, 'secao'), col(H, 'votavel'), col(H, 'votos'))
@@ -101,10 +116,16 @@ def ler_votos(caminho, membro, turnos, colunas):
             elif num == '96':
                 a[k + 1] += q
             else:
-                a[mapa(num)] += q
+                destino = mapa(num)
+                if destino is None:
+                    a[k + 1] += q
+                    if num == '28':
+                        nulos_tecnicos[kk] = nulos_tecnicos.get(kk, 0) + q
+                else:
+                    a[destino] += q
             if cL and kk[1] not in locais:
                 locais[kk[1]] = (r[cL].strip(), norm(r[cLN]) if cLN else '')
-    return acc, locais
+    return acc, locais, nulos_tecnicos
 
 
 def ler_detalhe(caminho, membro, turnos):
@@ -154,19 +175,26 @@ def agregar_zona(w):
 
 def construir(args):
     k22 = lambda n: 0 if n == '13' else (1 if n == '22' else 2)           # L, B, O
-    v22, loc22 = ler_votos(args.votos22, args.membro_votos22, ('1', '2'), (k22, 3))
+    v22, loc22, _ = ler_votos(args.votos22, args.membro_votos22, ('1', '2'), (k22, 3))
     d22 = ler_detalhe(args.det22, args.membro_det22, ('1', '2'))
     cands = dict(p.split('=') for p in args.cands26.split(','))
     nomes26 = ['L', 'F', 'CURY', 'SANTOS', 'CAIADO', 'ZEMA']
     if list(cands) != nomes26:
         raise SystemExit('--cands26 deve listar, nesta ordem: ' + ','.join(nomes26))
     idx26 = {cands[n]: i for i, n in enumerate(nomes26)}
-    k26 = lambda n: idx26.get(n, 6)                                        # 0..5 nomeados, 6 = demais
-    v26, loc26 = ler_votos(args.votos26, args.membro_votos26, ('1',), (k26, 7))
+    # Em 2026, NR_VOTAVEL=28 soma 5.246 nulos técnicos (vnt no JSON nacional); não é candidato "demais".
+    k26 = lambda n: None if n == '28' else idx26.get(n, 6)                 # 0..5 nomeados, 6 = demais, None = nulo técnico
+    v26, loc26, nulos_tecnicos26 = ler_votos(args.votos26, args.membro_votos26, ('1',), (k26, 7))
     d26 = ler_detalhe(args.det26, args.membro_det26, ('1',))
     w1, w2, w3 = onda(v22, d22, '1'), onda(v22, d22, '2'), onda(v26, d26, '1')
     qa = {'secoes_1T22': len(w1), 'secoes_2T22': len(w2), 'secoes_1T26': len(w3), 'excluidas_exterior': 0, 'excluidas_anomalia': 0, 'faltam_em_alguma_onda': 0,
-          'tier_A': 0, 'tier_B': 0, 'tier_A_sem_info_local': 0, 'eleitorado_2026_total': sum(v[0] for v in w3.values()), 'eleitorado_2026_tier_A': 0}
+          'tier_A': 0, 'tier_B': 0, 'tier_A_sem_info_local': 0,
+          'eleitorado_2026_total': JSON_TSE_2026['eleitorado_apurado'],
+          'eleitorado_2026_base_votos': sum(v[0] for v in w3.values()),
+          'eleitorado_2026_total_detalhe': sum(v[0] for (t, _), v in d26.items() if t == '1'),
+          'eleitorado_2026_nao_apurado': JSON_TSE_2026['eleitorado_nao_apurado'],
+          'abstencao_2026_total_detalhe': 0, 'abstencao_2026_apurada_json': JSON_TSE_2026['abstencao_apurada'],
+          'eleitorado_2026_tier_A': 0}
     totais = {}
     def soma(onda_, tag, cols):
         for k, v in onda_.items():
@@ -174,7 +202,35 @@ def construir(args):
                 totais[(tag, nome)] = totais.get((tag, nome), 0) + val
     soma(w1, '2022-1', lambda v: [('L', v[2][0]), ('B', v[2][1])])
     soma(w2, '2022-2', lambda v: [('L', v[2][0]), ('B', v[2][1])])
-    soma(w3, '2026', lambda v: [(n, v[2][i]) for i, n in enumerate(nomes26)] + [('Bl', v[3]), ('N', v[4])])
+    soma(w3, '2026', lambda v: [(n, v[2][i]) for i, n in enumerate(nomes26)] + [('D', v[2][6]), ('Bl', v[3]), ('N', v[4])])
+    # Registra totais absolutos de cada onda em TODAS as seções capturadas,
+    # antes do casamento e do filtro de qualidade A/B. Isso permite comparar
+    # a fonte nacional com os números da amostra efetivamente analisada.
+    for tag, onda_, detalhe_, turno_ in (('2022-1', w1, d22, '1'), ('2022-2', w2, d22, '2'), ('2026', w3, d26, '1')):
+        # O total capturado usa a mesma população de seções com resultado que
+        # compõe a base JSON do aplicativo. A soma do detalhe completo fica
+        # registrada à parte, pois pode incluir seções sem linha de votação.
+        donda = list(onda_.values())
+        totais[(tag, 'aptos')] = sum(v[0] for v in donda)
+        totais[(tag, 'comparecimento')] = sum(v[1] for v in donda)
+        totais[(tag, 'abstencao')] = sum(max(0, v[0] - v[1]) for v in donda)
+        totais[(tag, 'brancos')] = sum(v[3] for v in onda_.values())
+        totais[(tag, 'nulos')] = sum(v[4] for v in onda_.values())
+        totais[(tag, 'validos')] = sum(sum(v[2]) for v in onda_.values())
+        if tag == '2022-1':
+            totais[(tag, 'outros')] = sum(v[2][2] for v in onda_.values())
+        elif tag == '2022-2':
+            totais[(tag, 'outros')] = 0
+        else:
+            totais[(tag, 'outros')] = sum(sum(v[2][2:]) for v in onda_.values())
+    detalhe_completo = {}
+    for tag, detalhe_, turno_ in (('2022-1', d22, '1'), ('2022-2', d22, '2'), ('2026', d26, '1')):
+        donda = [v for (t, _), v in detalhe_.items() if t == turno_]
+        detalhe_completo['%s:aptos' % tag] = sum(v[0] for v in donda)
+        detalhe_completo['%s:comparecimento' % tag] = sum(v[1] for v in donda)
+        detalhe_completo['%s:abstencao' % tag] = sum(max(0, v[0] - v[1]) for v in donda)
+    totais[('2026', 'nulos_tecnicos')] = sum(nulos_tecnicos26.values())
+    totais[('2026', 'nulos_validos')] = totais[('2026', 'nulos')] - totais[('2026', 'nulos_tecnicos')]
     ruim = []
     for (tag, nome), esp in ESPERADO.items():
         if (tag, nome) in totais:
@@ -184,9 +240,21 @@ def construir(args):
             if rel > 5e-4:
                 ruim.append((tag, nome))
     qa['totais_nacionais'] = {'%s:%s' % k: v for k, v in totais.items()}
+    qa['totais_detalhe_completo'] = detalhe_completo
     qa['totais_divergentes'] = ['%s:%s' % x for x in ruim]
     if ruim and not args.force:
         raise SystemExit('TOTAIS NACIONAIS NÃO BATEM em %s. Reveja colunas, números de candidatos (--cands26) e arquivos. (--force ignora, NÃO recomendado.)' % ruim)
+    qa['fonte_json_tse_2026'] = URL_JSON_TSE_2026
+    qa['totais_json_tse_2026'] = JSON_TSE_2026
+    qa['divergencias_json_tse_2026'] = []
+    for (fonte, nome), key in JSON_TSE_2026_CHECKS.items():
+        obtido = detalhe_completo.get('2026:aptos') if fonte == 'detalhe' else totais.get(('2026', nome))
+        if obtido != JSON_TSE_2026[key]:
+            qa['divergencias_json_tse_2026'].append('%s:%s' % (fonte, nome))
+    if JSON_TSE_2026['eleitorado_apurado'] - JSON_TSE_2026['comparecimento'] != JSON_TSE_2026['abstencao_apurada']:
+        qa['divergencias_json_tse_2026'].append('eleitorado_apurado:abstencao_apurada')
+    if qa['divergencias_json_tse_2026'] and not args.force:
+        raise SystemExit('TOTAIS EXATOS DO JSON TSE NÃO BATEM em %s. Reveja a classificação de votos e arquivos; --force não é recomendado.' % qa['divergencias_json_tse_2026'])
     if getattr(args, 'unidade', 'secao') == 'zona':
         w1, w2, w3 = agregar_zona(w1), agregar_zona(w2), agregar_zona(w3)
         loc22, loc26 = {}, {}
@@ -220,6 +288,7 @@ def construir(args):
         row = [k, uf, mun, zona, secao, local, tier, a1, a2, a3, L1, B1, O1, br1, n1, ab1, ca2[0], ca2[1], br2, n2, ab2] + list(ca3[:7]) + [br3, n3, ab3]
         linhas.append(row)
     qa['cobertura_eleitorado_tier_A'] = qa['eleitorado_2026_tier_A'] / max(1, qa['eleitorado_2026_total'])
+    qa['abstencao_2026_total_detalhe'] = detalhe_completo['2026:abstencao']
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, 'w', encoding='utf-8') as f:
         for r in linhas:

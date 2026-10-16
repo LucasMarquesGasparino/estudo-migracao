@@ -8,7 +8,7 @@ const [resFile, qaFile, outHtml] = process.argv.slice(2);
 if (!resFile || !outHtml) { console.error('uso: node scripts/est-make-report.js out/resultados.json out/qa.json out/estudo.html'); process.exit(2); }
 const res = JSON.parse(fs.readFileSync(resFile, 'utf8'));
 let qa = null;
-try { const q = JSON.parse(fs.readFileSync(qaFile, 'utf8')); delete q.totais_nacionais; qa = q; } catch (e) { console.warn('aviso: sem qa.json (' + qaFile + ')'); }
+try { qa = JSON.parse(fs.readFileSync(qaFile, 'utf8')); } catch (e) { console.warn('aviso: sem qa.json (' + qaFile + ')'); }
 const html = P.render(res, { generatedAt: new Date().toISOString().slice(0, 16).replace('T', ' '), qa: qa });
 fs.mkdirSync(path.dirname(outHtml), { recursive: true });
 fs.writeFileSync(outHtml, html);

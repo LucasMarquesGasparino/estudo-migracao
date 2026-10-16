@@ -13,7 +13,7 @@
 
   /* Textos dos veredictos — ÚNICOS lugares onde se afirma algo. Linguagem sempre "compatível com", nunca "prova". */
   function verdictText(res) {
-    var v = res.verdicts, d = v.q1Detail, thr = res.meta.cfg.migRelevant, q1, q2 = [];
+    var v = res.verdicts, d = v.q1Detail, thr = res.meta.cfg.migRelevant, q1, q2, q3;
     var nums = pct(d.est) + ' dos eleitores de Lula no 2º turno de 2022 (IC95%: ' + pct(d.lo) + ' a ' + pct(d.hi) + '; ≈ ' + int(d.votes) + ' votos)';
     var caveat = ' Dados agregados não distinguem migração individual de outras explicações com o mesmo padrão (por exemplo, mobilização de abstenção em áreas de maioria lulista): em simulação, um efeito desse tipo gera exatamente o mesmo sinal.';
     if (v.q1Final === 'SEM_SINAL_AGREGADO') q1 = 'Não há sinal agregado de migração de Lula (2T22) para Flávio (1T26): a estimativa é ' + nums + ', abaixo do limiar de relevância de ' + pct(thr, 0) + '. Isso descreve o efeito líquido em nível de seção; trocas individuais pequenas ou compensadas por fluxos inversos não aparecem.';
@@ -22,17 +22,17 @@
     else if (v.q1Final === 'PADRAO_SEM_CONFIRMACAO') q1 = 'Os dados agregados mostram um padrão compatível com migração de Lula (2T22) para Flávio (1T26): ' + nums + ', mantido em ' + d.specsAbove + ' de ' + d.specs + ' especificações. Sem dados individuais (pesquisas) para confirmar, não se pode afirmar que houve migração.' + caveat;
     else q1 = 'Resultado inconclusivo sobre migração de Lula (2T22) para Flávio (1T26): estimativa de ' + nums + ', com intervalo que inclui valores acima e abaixo do limiar de relevância de ' + pct(thr, 0) + '.';
     var rf = res.retention.rhoF, rl = res.retention.rhoL;
-    q2.push('Voto útil como gradiente de competitividade: ' + ({
+    q2 = 'Retenção do acréscimo de Bolsonaro: a razão Flávio (acréscimo do 2º turno ÷ núcleo do 1º turno de 2022) é ' + num(rf.est, 2) + ' (IC95%: ' + num(rf.lo, 2) + ' a ' + num(rf.hi, 2) + ') — ' + ({
+      ADIANTADO: 'o acréscimo se comporta como o núcleo; padrão compatível com voto já "adiantado" no 1º turno de 2026.',
+      INTERMEDIARIO: 'retenção parcial: parte desse acréscimo já está com Flávio, parte segue em jogo.',
+      EM_JOGO: 'o acréscimo praticamente não reapareceu com Flávio no 1º turno: continua em disputa.'
+    })[v.q2Rho.F] + ' Para Lula, a razão equivalente é ' + num(rl.est, 2) + ' (IC95%: ' + num(rl.lo, 2) + ' a ' + num(rl.hi, 2) + '), também classificada como ' + v.q2Rho.L.toLowerCase().replace('_', ' ') + '.';
+    q3 = 'Gradiente de competitividade (voto estratégico): ' + ({
       NEGATIVO: 'em seções onde o 2º turno de 2022 foi mais disputado, os candidatos "outros" têm menos votos em 2026 (dentro do mesmo município) — padrão compatível com voto estratégico.',
       NULO: 'não foi encontrada relação entre competitividade em 2022 e votos nos "outros" em 2026 (dentro do mesmo município) — o teste não detecta voto estratégico.',
       POSITIVO: 'seções mais disputadas em 2022 tiveram MAIS votos nos "outros" em 2026 — oposto ao esperado sob voto estratégico.'
-    })[v.q2Gradient]);
-    q2.push('Votos "adiantados" de Flávio: o acréscimo líquido de Bolsonaro entre o 1º e o 2º turno de 2022 foi retido por Flávio no 1T26 a ' + num(rf.est, 2) + ' da taxa do núcleo do 1º turno de 2022 (IC95%: ' + num(rf.lo, 2) + ' a ' + num(rf.hi, 2) + ') — ' + ({
-      ADIANTADO: 'compatível com a ideia de que o eleitorado do 2º turno de 2022 já se reuniu no 1º turno de 2026.',
-      INTERMEDIARIO: 'retenção parcial: parte desse acréscimo já está com Flávio, parte segue em jogo.',
-      EM_JOGO: 'o acréscimo do 2º turno de 2022 praticamente não reapareceu com Flávio no 1º turno: continua em disputa.'
-    })[v.q2Rho.F] + ' Para Lula, a razão equivalente é ' + num(rl.est, 2) + ' (IC95%: ' + num(rl.lo, 2) + ' a ' + num(rl.hi, 2) + ').');
-    return { q1: q1, q2: q2 };
+    })[v.q2Gradient] + ' Coeficiente de K: ' + num(res.strategic.m1.beta[0], 2) + ' p.p. (EP ' + num(res.strategic.m1.se[0], 2) + '); p empírico da permutação: ' + num(res.strategic.permutation.pEmp, 3) + '.';
+    return { q1: q1, q2: q2, q3: q3 };
   }
 
   var CSS = 'body{font:16px/1.5 system-ui,sans-serif;max-width:920px;margin:0 auto;padding:12px;color:#1b1b1b;background:#fff}h1{font-size:1.5rem}h2{margin-top:2rem;border-bottom:2px solid #ddd;padding-bottom:4px}' +
@@ -55,22 +55,61 @@
     h.push('<h1>Migração de votos: 2º turno de 2022 × 1º turno de 2026</h1><p class="small">Gerado em ' + esc(meta.generatedAt || '') + ' · seções analisadas: ' + int(res.meta.sample.n) + ' em ' + int(res.meta.sample.municipalities) + ' municípios e ' + int(res.meta.sample.zones) + ' zonas · fonte: TSE (dados abertos)</p>');
     // ---- resumo
     h.push('<h2 id="resumo">Resumo</h2>');
-    h.push('<div class="box"><b>Houve migração de votos de Lula para Flávio nas zonas?</b><p>' + esc(vt.q1) + '</p></div>');
-    h.push('<div class="box"><b>Os votos de Flávio são votos "adiantados" do 2º turno (voto útil)?</b>' + vt.q2.map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('') + '</div>');
+    h.push('<div class="box"><b>H1 — Migração agregada de Lula para Flávio?</b><p>' + esc(vt.q1) + '</p></div>');
+    h.push('<div class="box"><b>H2 — O acréscimo do 2º turno de 2022 já estava "adiantado"?</b><p>' + esc(vt.q2) + '</p></div>');
+    h.push('<div class="box"><b>H3 — Há gradiente compatível com voto estratégico?</b><p>' + esc(vt.q3) + '</p></div>');
     h.push('<div class="box warn"><b>Como ler:</b> este estudo usa totais por seção (inferência ecológica). Ele descreve padrões entre lugares; não observa o voto de cada pessoa. As conclusões acima valem como "compatível com", nunca como prova. Regras de decisão fixadas antes de ver os dados: seção Reprodução.</div>');
     // ---- dados
     h.push('<h2 id="dados">Dados e amostra</h2>');
     var qa = meta.qa;
-    if (qa) h.push(table(['Item', 'Valor'], Object.keys(qa).map(function (k) { return [k, typeof qa[k] === 'number' ? int(qa[k]) : JSON.stringify(qa[k])]; })));
+    if (qa) h.push(table(['Item', 'Valor'], Object.keys(qa).filter(function (k) { return ['totais_nacionais', 'totais_detalhe_completo', 'totais_json_tse_2026'].indexOf(k) < 0; }).map(function (k) { return [k, typeof qa[k] === 'number' ? (k.indexOf('cobertura_') === 0 ? pct(qa[k]) : int(qa[k])) : JSON.stringify(qa[k])]; })));
     else h.push('<p class="small">Sem arquivo de qualidade (qa.json) anexado.</p>');
+    var qaTotals = qa && qa.totais_nacionais || {}, absRows = [];
+    function absRowValue(turn, label, full, sample) {
+      if (full === undefined) return;
+      absRows.push([turn, label, int(full), int(sample), full ? pct(sample / full, 1) : '—']);
+    }
+    function absRow(turn, label, key, sample) {
+      absRowValue(turn, label, qaTotals[turn + ':' + key], sample);
+    }
+    if (qa) [
+      { turn: '2022-1', label: '1º turno 2022', aptos: N.E1, comparecimento: N.votes.L1 + N.votes.B1 + N.votes.OUT1 + N.votes.Bl1 + N.votes.N1,
+        items: [['Lula', 'L', N.votes.L1], ['Bolsonaro', 'B', N.votes.B1], ['Outros candidatos', 'outros', N.votes.OUT1], ['Brancos', 'brancos', N.votes.Bl1], ['Nulos', 'nulos', N.votes.N1], ['Abstenção', 'abstencao', N.votes.A1]] },
+      { turn: '2022-2', label: '2º turno 2022', aptos: N.E2, comparecimento: N.votes.L2 + N.votes.B2 + N.votes.Bl2 + N.votes.N2,
+        items: [['Lula', 'L', N.votes.L2], ['Bolsonaro', 'B', N.votes.B2], ['Brancos', 'brancos', N.votes.Bl2], ['Nulos', 'nulos', N.votes.N2], ['Abstenção', 'abstencao', N.votes.A2]] },
+      { turn: '2026', label: '1º turno 2026', aptos: N.E3, comparecimento: N.votes.L3 + N.votes.F3 + N.votes.OUT3 + N.votes.Bl3 + N.votes.N3,
+        items: [['Lula', 'L', N.votes.L3], ['Flávio', 'F', N.votes.F3], ['Cury', 'CURY', N.votes.CY3], ['Renan Santos', 'SANTOS', N.votes.SA3], ['Caiado', 'CAIADO', N.votes.CA3], ['Zema', 'ZEMA', N.votes.ZE3], ['Demais candidatos', 'D', N.votes.D3], ['Brancos', 'brancos', N.votes.Bl3], ['Nulos', 'nulos', N.votes.N3], ['Abstenção pela base capturada', 'abstencao', N.votes.A3]] }
+    ].forEach(function (wave) {
+      absRows.push([wave.turn, 'Aptos', int(qaTotals[wave.turn + ':aptos'] || 0), int(wave.aptos), pct(wave.aptos / (qaTotals[wave.turn + ':aptos'] || 1), 1)]);
+      absRows.push([wave.turn, 'Comparecimento', int(qaTotals[wave.turn + ':comparecimento'] || 0), int(wave.comparecimento), pct(wave.comparecimento / (qaTotals[wave.turn + ':comparecimento'] || 1), 1)]);
+      wave.items.forEach(function (item) { absRow(wave.turn, item[0], item[1], item[2]); });
+    });
+    if (qa) {
+      var official26 = qa.totais_json_tse_2026 || {};
+      var fullDetail = qa.totais_detalhe_completo || {};
+      [
+        ['2022-1', '1º turno 2022', N.E1, N.votes.A1],
+        ['2022-2', '2º turno 2022', N.E2, N.votes.A2],
+        ['2026', '1º turno 2026', N.E3, N.votes.A3]
+      ].forEach(function (wave) {
+        absRowValue(wave[0], 'Aptos no detalhe completo', fullDetail[wave[0] + ':aptos'], wave[2]);
+        absRowValue(wave[0], 'Abstenção no detalhe completo', fullDetail[wave[0] + ':abstencao'], wave[3]);
+      });
+      absRowValue('2026', 'Eleitorado apurado (JSON TSE)', official26.eleitorado_apurado, N.E3);
+      absRowValue('2026', 'Eleitorado não apurado (JSON TSE)', official26.eleitorado_nao_apurado, 0);
+      absRowValue('2026', 'Abstenção em seções apuradas (JSON TSE)', official26.abstencao_apurada, N.votes.A3);
+      h.push('<h3>Valores absolutos: todas as seções capturadas × amostra A</h3>');
+      h.push(table(['Onda', 'Item', 'Total da base de seções capturadas', 'Incluído na amostra A', 'Cobertura da contagem'], absRows));
+      h.push('<p class="small">A análise principal usa apenas seções casadas de qualidade A; seus absolutos não são totais nacionais. Os totais capturados de votos usam a mesma base de seções do JSON do app (2026: 499.206 seções, 158.745.007 aptos), e os votos de candidatos, brancos e nulos batem com os JSONs do placar. Em 2022, o detalhe completo soma 156.454.011 aptos contra 156.453.354 na base de seções com votação; comparecimento e votos coincidem, e 657 aptos estão apenas no detalhe. O detalhe completo de 2026 soma 158.745.502 aptos. O totalizador oficial separa 158.745.079 aptos em seções apuradas e 423 em 41 não apuradas; a diferença de 72 entre a base de votação e o eleitorado apurado corresponde a uma seção apurada sem linha no arquivo de votação. Por isso, a abstenção é 33.469.172 na base do app, 33.469.244 nas seções apuradas do totalizador e 33.469.667 pela conta QT_APTOS − comparecimento no detalhe completo. Nulos incluem 5.246 nulos técnicos (vnt). O arquivo fallback-2022.json do app é reescalado para a simulação por zona e não deve ser lido como total nacional observado.</p>');
+    }
     // ---- visão geral
     h.push('<h2 id="visao">Visão geral (nível nacional, amostra analisada)</h2>');
     h.push(Svg.barH({ items: [
       { label: 'Lula (2T22 → 1T26)', value: N.delta.L, color: '#c0392b' }, { label: 'Bolsonaro → Flávio', value: N.delta.F, color: '#2a6fb0' },
       { label: 'Outros candidatos (novos)', value: N.delta.OUT, color: '#8e7cc3' }, { label: 'Brancos+nulos+abstenção', value: N.delta.NV, color: '#888' }], fmt: function (x) { return pp(x); } }));
-    h.push('<p class="small">Variação em pontos percentuais do ELEITORADO (o denominador é fixo, então as quatro barras somam zero).</p>');
+    h.push('<p class="small">Esta visão usa somente a amostra A. Variação em pontos percentuais do eleitorado da amostra (o denominador é fixo, então as quatro barras somam zero); os totais nacionais capturados aparecem na tabela anterior.</p>');
     h.push(table(['', '2º turno 2022', '1º turno 2026'], [
-      ['Lula', int(N.votes.L2) + ' (' + pct(N.pp.L2) + ' do eleitorado)', int(N.votes.L3) + ' (' + pct(N.pp.L3) + ')'],
+      ['Lula', int(N.votes.L2) + ' (' + pct(N.pp.L2) + ' do eleitorado da amostra)', int(N.votes.L3) + ' (' + pct(N.pp.L3) + ')'],
       ['Bolsonaro / Flávio', int(N.votes.B2) + ' (' + pct(N.pp.B2) + ')', int(N.votes.F3) + ' (' + pct(N.pp.F3) + ')'],
       ['Outros candidatos', '—', int(N.votes.OUT3) + ' (' + pct(N.pp.OUT3) + ')'], ['Brancos+nulos+abstenção', pct(N.pp.NV2), pct(N.pp.NV3)]]));
     // ---- zonas

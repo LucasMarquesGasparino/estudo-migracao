@@ -5,7 +5,7 @@
   "description": "Estudo: 2º turno 2022 x 1º turno 2026 por seção eleitoral",
   "scripts": {
     "test": "node --test",
-    "analisar": "node --max-old-space-size=3072 scripts/est-run.js data/secoes.tsv out/resultados.json",
+    "analisar": "node --max-old-space-size=3072 scripts/est-run.js data/secoes.tsv out/resultados.json --surveys data/pesquisas.json --qa out/qa.json",
     "relatorio": "node scripts/est-make-report.js out/resultados.json out/qa.json out/estudo.html"
   }
 }

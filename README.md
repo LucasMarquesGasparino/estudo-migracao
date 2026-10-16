@@ -22,7 +22,7 @@ Confira todos os portões de `out/qa.json` antes de interpretar. Se a cobertura 
 ```sh
 npm test
 python3 scripts/est_build_secoes.py --selftest
-node --max-old-space-size=3072 scripts/est-run.js data/secoes.tsv out/resultados.json --surveys data/pesquisas.json
+node --max-old-space-size=3072 scripts/est-run.js data/secoes.tsv out/resultados.json --surveys data/pesquisas.json --qa out/qa.json
 node scripts/est-make-report.js out/resultados.json out/qa.json out/estudo.html
 ```
 
