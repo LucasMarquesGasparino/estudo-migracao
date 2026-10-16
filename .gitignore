@@ -1,0 +1,15 @@
+node_modules/
+build/
+gen/
+bin/
+out/
+.gradle/
+*.apk
+*.keystore
+*.jks
+*.p12
+local.properties
+data/secoes.tsv
+*.zip
+votacao_secao_*.csv
+detalhe_votacao_secao_*.csv
